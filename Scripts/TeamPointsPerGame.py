@@ -93,22 +93,21 @@ print(d_teamPointsAgainstPerGame)
 # //
 
 
-# Group by team and round, summing the dreamTeamPoint
 
+# Compute mean DreamTeamPoints per game per venue (instead of sum)
 teamPointsPerGamePerVenue = (
-    stats_data.groupby(["team.name", "venue.name"], as_index=False)
-    .agg(dreamTeamPoints=("dreamTeamPoints", "sum"))
+    stats_data.groupby(["team.name", "venue.name", "round.roundNumber"], as_index=False)
+    .agg(dreamTeamPoints=("dreamTeamPoints", "sum"))  # Mean per game, not sum
 )
 
-# Pivot the table: rows = teams, columns = rounds, values = dreamTeamPoints
-teamPointsPerGamePerVenue = teamPointsPerGamePerVenue.pivot(
-    index="team.name", columns="venue.name", values="dreamTeamPoints"
-).fillna(0)  # Fill NaNs with 0 for rounds where teams didn't score
+# Calculate the mean DreamTeamPoints per venue
+teamPointsPerGamePerVenue = teamPointsPerGamePerVenue.groupby("venue.name")["dreamTeamPoints"].mean().round(2)
 
-teamPointsPerGamePerVenue["Avg_PPG"] = teamPointsPerGamePerVenue.replace(0.0, pd.NA).mean(axis=1, skipna=True).astype(float).round(2)
-d_teamPointsPerGamePerVenue = teamPointsPerGamePerVenue.replace(0.0, "BYE").sort_values(by='Avg_PPG', ascending=False)
+print("")
+print("teamPointsPerGamePerVenue:")
+print(teamPointsPerGamePerVenue)
+print("")
 
-print(d_teamPointsPerGamePerVenue)
 
 # //
 # 
@@ -147,6 +146,16 @@ adelaideGames["Opp_PAPG"] = adelaide_opponent_PFPG_AVG
 # Calculate the for points differential (Adelaide's round points - Opponents's PA season average)
 diffAdelaidePA = (-1 * (1 - adelaide_PFPG / adelaide_opponent_PFPG_AVG) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
 adelaideGames["PAPG_diff"] = diffAdelaidePA
+
+# Get venue averages for each corresponding round
+adelaide_venue_PFPG_AVG = teamPointsPerGamePerVenue.reindex(adelaideGames["venue.name"])
+# Convert to DataFrame and assign the correct index
+adelaide_venue_PFPG_AVG = pd.DataFrame(adelaide_venue_PFPG_AVG)
+adelaide_venue_PFPG_AVG.index = adelaideGames.index  # Set index to round.roundNumber
+
+diffAdelaidePV = (-1 * (1 - adelaide_PFPG / adelaide_venue_PFPG_AVG["dreamTeamPoints"]) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+adelaideGames["Venue_AVG"] = adelaide_venue_PFPG_AVG["dreamTeamPoints"]
+adelaideGames["PPV_diff"] = diffAdelaidePV
 
 print("")
 print(adelaideGames)
