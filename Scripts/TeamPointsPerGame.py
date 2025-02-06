@@ -14,12 +14,6 @@ stats_data = stats_data[[
 # remove finals 
 stats_data = stats_data[~stats_data["round.name"].str.contains("final", case=False, na=False)]
 
-# //
-# 
-# FUNCTIONS
-# 
-# //
-
 # Add opponents to stats_data
 stats_data["opponent"] = stats_data.apply(
     lambda row: row["away.team.name"] if row["team.name"] in row["home.team.name"]
@@ -47,6 +41,7 @@ teamPointsForPerGame = teamPointsForPerGame.pivot(
 
 # Calculate the average per team, excluding 0.0 values
 teamPointsForPerGame["Avg_PFPG"] = teamPointsForPerGame.replace(0.0, pd.NA).mean(axis=1, skipna=True).astype(float).round(2)
+# Mask invalid values
 d_teamPointsForPerGame = teamPointsForPerGame.replace(0.0, "BYE").sort_values(by='Avg_PFPG', ascending=False)
 
 
@@ -76,8 +71,8 @@ teamPointsAgainstPerGame = teamPointsAgainstPerGame.pivot(
 
 # Calculate the average per team, excluding 0.0 values
 teamPointsAgainstPerGame["Avg_PAPG"] = teamPointsAgainstPerGame.replace(0.0, pd.NA).mean(axis=1, skipna=True).astype(float).round(2)
+# Mask invalid values
 d_teamPointsAgainstPerGame = teamPointsAgainstPerGame.replace(0.0, "BYE").sort_values(by='Avg_PAPG', ascending=False)
-  # Mask invalid values
 
 
 print("")
@@ -115,51 +110,63 @@ print("")
 # 
 # //
 
-# Filter to only keep rows where Adelaide played
-adelaideGames = stats_data[stats_data["team.name"] == "Adelaide Crows"]
-adelaideGames = adelaideGames.drop_duplicates(subset=["round.roundNumber", "team.name"])
 
-# Select relevant columns
-adelaideGames = adelaideGames.set_index("round.roundNumber")
-adelaideGames = adelaideGames[["team.name", "opponent", "venue.name"]]
+def AverageDifferentialsPerTeam(teamName) :
+    gamesForTeam = pd.DataFrame(stats_data[stats_data["team.name"] == teamName])
+    gamesForTeam = gamesForTeam.drop_duplicates(subset=["round.roundNumber", "team.name"])
 
-# Get Adelaide's points for season avg 
-adelaide_PFPG_AVG = teamPointsForPerGame.loc["Adelaide Crows"]["Avg_PFPG"]
-adelaideGames["PFPG_AVG"] = adelaide_PFPG_AVG
+    # Select relevant columns
+    gamesForTeam = gamesForTeam.set_index("round.roundNumber")
+    gamesForTeam = gamesForTeam[["team.name", "opponent", "venue.name"]]
 
-# Get Adelaide's points per venue
+    # Get Adelaide's points for season avg 
+    PFPG_AVG = teamPointsForPerGame.loc[teamName]["Avg_PFPG"]
+    gamesForTeam["PF_AVG"] = PFPG_AVG
+
+    # Get Adelaide's points for per game
+    gamesForTeam["PF"] = teamPointsForPerGame.loc[teamName]
+    team_PFPG = gamesForTeam["PF"]
+
+    # Calculate the for points differential (Adelaide's round points - Adelaide's PF season average)
+    diffPF = (-1 * (1 - team_PFPG / PFPG_AVG) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+    gamesForTeam["PF_diff"] = diffPF
+
+    # Get Adelaide's opponents points against season avg
+    adelaide_opponent_PFPG_AVG = teamPointsAgainstPerGame["Avg_PAPG"].reindex(gamesForTeam["opponent"])
+    adelaide_opponent_PFPG_AVG.index = gamesForTeam.index
+    gamesForTeam["Opp_PAPG"] = adelaide_opponent_PFPG_AVG
+
+    # Calculate the for points differential (Adelaide's round points - Opponents's PA season average)
+    diffPA = (-1 * (1 - team_PFPG / adelaide_opponent_PFPG_AVG) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+    gamesForTeam["PA_diff"] = diffPA
+
+    # Get venue averages for each corresponding round
+    venueAvgPFPG = teamPointsPerGamePerVenue.reindex(gamesForTeam["venue.name"])
+
+    # Convert to DataFrame and assign the correct index
+    venueAvgPFPG = pd.DataFrame(venueAvgPFPG)
+    venueAvgPFPG.index = gamesForTeam.index  # Set index to round.roundNumber
+
+    diffPV = (-1 * (1 - team_PFPG / venueAvgPFPG["dreamTeamPoints"]) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+    gamesForTeam["Venue_AVG"] = venueAvgPFPG["dreamTeamPoints"]
+    gamesForTeam["PPV_diff"] = diffPV
+
+    print("")
+    print("TEAM: " + teamName)
+    print(gamesForTeam)
+    print("")
+
+    return gamesForTeam
+# Initialize empty DataFrame for final results
+FinalTeamPFPA = pd.DataFrame()
+
+# Loop through teams and append results
+for team in stats_data["team.name"].drop_duplicates().sort_values():
+    team_df = AverageDifferentialsPerTeam(team)
+    FinalTeamPFPA = pd.concat([FinalTeamPFPA, team_df])  # Append instead of overwriting
 
 
-# Get Adelaide's points for per game
-adelaideGames["PFPG"] = teamPointsForPerGame.loc["Adelaide Crows"]
-adelaide_PFPG = adelaideGames["PFPG"]
-
-# Calculate the for points differential (Adelaide's round points - Adelaide's PF season average)
-diffAdelaidePF = (-1 * (1 - adelaide_PFPG / adelaide_PFPG_AVG) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
-adelaideGames["PFPG_diff"] = diffAdelaidePF
-
-# Get Adelaide's opponents points against season avg
-adelaide_opponent_PFPG_AVG = teamPointsAgainstPerGame["Avg_PAPG"].reindex(adelaideGames["opponent"])
-adelaide_opponent_PFPG_AVG.index = adelaideGames.index
-adelaideGames["Opp_PAPG"] = adelaide_opponent_PFPG_AVG
-
-# Calculate the for points differential (Adelaide's round points - Opponents's PA season average)
-diffAdelaidePA = (-1 * (1 - adelaide_PFPG / adelaide_opponent_PFPG_AVG) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
-adelaideGames["PAPG_diff"] = diffAdelaidePA
-
-# Get venue averages for each corresponding round
-adelaide_venue_PFPG_AVG = teamPointsPerGamePerVenue.reindex(adelaideGames["venue.name"])
-# Convert to DataFrame and assign the correct index
-adelaide_venue_PFPG_AVG = pd.DataFrame(adelaide_venue_PFPG_AVG)
-adelaide_venue_PFPG_AVG.index = adelaideGames.index  # Set index to round.roundNumber
-
-diffAdelaidePV = (-1 * (1 - adelaide_PFPG / adelaide_venue_PFPG_AVG["dreamTeamPoints"]) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
-adelaideGames["Venue_AVG"] = adelaide_venue_PFPG_AVG["dreamTeamPoints"]
-adelaideGames["PPV_diff"] = diffAdelaidePV
-
-print("")
-print(adelaideGames)
 
 #save to CSV:
-adelaideGames = adelaideGames.drop(columns=["team.name"])
-adelaideGames.to_csv(filePath + "Adelaide_PFPA_Diff.csv", index=True)
+FinalTeamPFPA.set_index("team.name")
+FinalTeamPFPA.to_csv(filePath + "FinalTeamPFPA.csv", index=True)
