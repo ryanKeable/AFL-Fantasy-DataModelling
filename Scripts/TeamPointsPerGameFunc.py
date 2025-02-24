@@ -26,7 +26,7 @@ def GetPlayerFantasyPoints(stats) :
 # 
 # //
 
-def TeamPointsForPerGame(playerData) : 
+def TeamPointsForPerRound(playerData) : 
     # Group by team and round, summing the dreamTeamPoints
     teamPointsForPerGame = (
         playerData.groupby(["team.name", "round.roundNumber"], as_index=False)
@@ -74,6 +74,7 @@ def TeamPointsAgainstPerGame(playerData) :
 # 
 # //
 
+
 def TeamPointsPerGamePerVenue(playerData) : 
     # Compute mean DreamTeamPoints per game per venue (instead of sum)
     teamPointsPerGamePerVenue = (
@@ -93,6 +94,11 @@ def TeamPointsPerGamePerVenue(playerData) :
 # 
 # //
 
+def AverageDifferential(sample, avg) : 
+    diff = (-1 * (1 - sample / avg) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+    return diff
+
+
 def AverageDifferentialsPerTeam(playerData, teamName, teamPointsForPerGame, teamPointsAgainstPerGame, teamPointsPerGamePerVenue) :
     gamesForTeam = pd.DataFrame(playerData[playerData["team.name"] == teamName])
     gamesForTeam = gamesForTeam.drop_duplicates(subset=["round.roundNumber", "team.name"])
@@ -101,25 +107,25 @@ def AverageDifferentialsPerTeam(playerData, teamName, teamPointsForPerGame, team
     gamesForTeam = gamesForTeam.set_index("round.roundNumber")
     gamesForTeam = gamesForTeam[["team.name", "opponent", "venue.name"]]
 
-    # Get Adelaide's points for season avg 
+    # Get team's points for season avg 
     PFPG_AVG = teamPointsForPerGame.loc[teamName]["Avg_PFPG"]
     gamesForTeam["PF_AVG"] = PFPG_AVG
 
-    # Get Adelaide's points for per game
+    # Get team's points for per game
     gamesForTeam["PF"] = teamPointsForPerGame.loc[teamName]
     team_PFPG = gamesForTeam["PF"]
 
-    # Calculate the for points differential (Adelaide's round points - Adelaide's PF season average)
-    diffPF = (-1 * (1 - team_PFPG / PFPG_AVG) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+    # Calculate the for points differential (team's round points - team's PF season average)    
+    diffPF = AverageDifferential(team_PFPG, PFPG_AVG)
     gamesForTeam["PF_diff"] = diffPF
 
-    # Get Adelaide's opponents points against season avg
+    # Get team's opponents points against season avg
     adelaide_opponent_PFPG_AVG = teamPointsAgainstPerGame["Avg_PAPG"].reindex(gamesForTeam["opponent"])
     adelaide_opponent_PFPG_AVG.index = gamesForTeam.index
     gamesForTeam["Opp_PAPG"] = adelaide_opponent_PFPG_AVG
 
-    # Calculate the for points differential (Adelaide's round points - Opponents's PA season average)
-    diffPA = (-1 * (1 - team_PFPG / adelaide_opponent_PFPG_AVG) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+    # Calculate the for points differential (team's round points - Opponents's PA season average)
+    diffPA = AverageDifferential(team_PFPG, adelaide_opponent_PFPG_AVG)
     gamesForTeam["PA_diff"] = diffPA
 
     # Get venue averages for each corresponding round
@@ -129,7 +135,8 @@ def AverageDifferentialsPerTeam(playerData, teamName, teamPointsForPerGame, team
     venueAvgPFPG = pd.DataFrame(venueAvgPFPG)
     venueAvgPFPG.index = gamesForTeam.index  # Set index to round.roundNumber
 
-    diffPV = (-1 * (1 - team_PFPG / venueAvgPFPG["dreamTeamPoints"]) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
+    diffPV = AverageDifferential(team_PFPG, venueAvgPFPG["dreamTeamPoints"])
+
     gamesForTeam["Venue_AVG"] = venueAvgPFPG["dreamTeamPoints"]
     gamesForTeam["PPV_diff"] = diffPV
 
@@ -139,3 +146,14 @@ def AverageDifferentialsPerTeam(playerData, teamName, teamPointsForPerGame, team
     print("")
 
     return gamesForTeam
+
+def WeightedAverageOfValues(collection : list[float]) :
+    numerator = 0
+    denominator = 0
+    for i, item in enumerate(collection):
+        weight = i + 1
+        item *= weight
+        numerator += item
+        denominator += weight
+
+    return (numerator / denominator)

@@ -13,37 +13,53 @@ teamPointsPerGamePerVenue = []
 
 for i, val in enumerate(flieNames):
     df = pd.read_csv(filePath + flieNames[i])
-    playerStatsRaw.append(df)
-    playerStats.append(GetPlayerFantasyPoints(playerStatsRaw[i]))
-    teamPointsForPerGame.append(TeamPointsForPerGame(playerStats[i]))
-    teamPointsAgainstPerGame.append(TeamPointsAgainstPerGame(playerStats[i]))
-    teamPointsPerGamePerVenue.append(TeamPointsPerGamePerVenue(playerStats[i]))
 
-print("")
-print("teamPointsForPerGame: ")
-print("")
+    processedStats = GetPlayerFantasyPoints(df)  # Process fantasy points
+    playerStats.append(processedStats)
+    
+    teamPointsForPerGame.append(TeamPointsForPerRound(processedStats))
+    teamPointsAgainstPerGame.append(TeamPointsAgainstPerGame(processedStats))
+    teamPointsPerGamePerVenue.append(TeamPointsPerGamePerVenue(processedStats))
 
-print(teamPointsForPerGame[2].replace(0.0, "BYE").sort_values(by='Avg_PFPG', ascending=False))
+    print(f"\n teamPointsForPerGame: ")
+    print(f"\n {teamPointsForPerGame[i]}")
 
-print("")
-print("teamPointsAgainstPerGame: ")
-print("")
-print(teamPointsAgainstPerGame[2].replace(0.0, "BYE").sort_values(by='Avg_PAPG', ascending=False))
+print(f"\nteamPointsForPerGame.index")
+teamNames = teamPointsForPerGame[0].index.sort_values()
+print(f"\n{teamNames}")
 
-print("")
-print("teamPointsPerGamePerVenue:")
-print(teamPointsPerGamePerVenue[2])
-print("")
+averageTeamPointsPerYear = pd.DataFrame(index=teamNames)
 
-# Initialize empty DataFrame for final results
-FinalTeamPFPA_2024 = pd.DataFrame()
+averageTeamPointsPerYear["2022"] = teamPointsForPerGame[0]["Avg_PFPG"]
+averageTeamPointsPerYear["2023"] = teamPointsForPerGame[1]["Avg_PFPG"]
+averageTeamPointsPerYear["2024"] = teamPointsForPerGame[2]["Avg_PFPG"]
 
-# Loop through teams and append results
-for team in playerStatsRaw[2]["team.name"].drop_duplicates().sort_values():
-    team_df = AverageDifferentialsPerTeam(playerStats[2], team, teamPointsForPerGame[2], teamPointsAgainstPerGame[2], teamPointsPerGamePerVenue[2])
-    FinalTeamPFPA_2024 = pd.concat([FinalTeamPFPA_2024, team_df])  # Append instead of overwriting
+weightedAverages = []
+avgDifferentials = []
+for team in averageTeamPointsPerYear.index : 
+    weightedAverage = WeightedAverageOfValues(averageTeamPointsPerYear.loc[team]).__round__(2)
+    weightedAverages.append(weightedAverage)
+    avg2024 = averageTeamPointsPerYear.loc[team][2]
+    
+    print(f"\n team {team} avg2024 {avg2024}")
+
+    avgDifferentials.append(AverageDifferential(avg2024, weightedAverage))
+
+averageTeamPointsPerYear["wAVG"] = weightedAverages
+averageTeamPointsPerYear["Diff"] = avgDifferentials
+averageTeamPointsPerYear = averageTeamPointsPerYear.sort_values("Diff", ascending=False)
+print(f"\n{averageTeamPointsPerYear}")
+
+# # Initialize empty DataFrame for final results
+# FinalTeamPFPA_2024 = pd.DataFrame()
 
 
-#save to CSV:
-FinalTeamPFPA_2024.set_index("team.name")
-FinalTeamPFPA_2024.to_csv(filePath + "FinalTeamPFPA_2024.csv", index=True)
+# # Loop through teams, get differentials per team and concat results
+# for team in playerStatsRaw[2]["team.name"].drop_duplicates().sort_values() : 
+#     team_df = AverageDifferentialsPerTeam(playerStats[2], team, teamPointsForPerGame[2], teamPointsAgainstPerGame[2], teamPointsPerGamePerVenue[2])
+#     FinalTeamPFPA_2024 = pd.concat([FinalTeamPFPA_2024, team_df])  # Append instead of overwriting
+
+
+# #save to CSV:
+# FinalTeamPFPA_2024.set_index("team.name")
+# FinalTeamPFPA_2024.to_csv(filePath + "FinalTeamPFPA_2024.csv", index=True).round(2)
