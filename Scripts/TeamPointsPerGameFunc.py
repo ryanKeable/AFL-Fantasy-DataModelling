@@ -1,11 +1,97 @@
 import pandas as pd
 
-def GetPlayerFantasyPoints(stats) :
+RelevantDataFields = [
+        "Year", "round.roundNumber", "round.name", "team.name", "venue.name", "home.team.name", "away.team.name",
+        "player.player.player.givenName", "player.player.player.surname", "dreamTeamPoints", "player.player.position", 
+        "timeOnGroundPercentage", "goals", "behinds", "kicks", "handballs", "disposals", "marks", "bounces", "tackles",
+        "contestedPossessions",  "uncontestedPossessions", "inside50s", "marksInside50", "contestedMarks", "hitouts", 
+        "disposalEfficiency", "rebound50s", "goalAssists", "turnovers", "intercepts", "tacklesInside50", "shotsAtGoal",
+        "metresGained", "clearances.centreClearances", "clearances.stoppageClearances", "extendedStats.kickEfficiency",
+        "extendedStats.kickToHandballRatio", "extendedStats.marksOnLead", "extendedStats.interceptMarks", "extendedStats.hitoutsToAdvantage", 
+        "extendedStats.groundBallGets", "extendedStats.scoreLaunches", "extendedStats.defHalfPressureActs", "extendedStats.centreBounceAttendances",
+        "extendedStats.kickins", "extendedStats.kickinsPlayon","extendedStats.contestedPossessionRate", "extendedStats.kickToHandballRatio", "clearances.totalClearances"
+        ]
+
+MidfieldPositionTitles = ["R", "RR", "C"]
+BackPositionTitles = ["BPL", "BPR", "HBFL", "HBFR"]
+TransitionPositionTitles = ["HFFL", "HFFR", "W"]
+RuckPositionTitle = "RK"
+
+StatAbV = {
+    "goals": "G",
+    "behinds": "B",
+    "kicks": "K",
+    "handballs": "H",
+    "marks": "M",
+    "disposals": "D",
+    "tackles": "T",
+    "contestedPossessions": "CP",
+    "uncontestedPossessions": "UP",
+    "contestedMarks": "CM",
+    "clearances.totalClearances": "CLR",
+    "inside50s": "i50", 
+    "disposalEfficiency" : "DE%", 
+    "rebound50s" : "R50", 
+    "metresGained" : "MTR", 
+    "extendedStats.kickEfficiency" : "KE%",
+    "extendedStats.marksOnLead" : "ML",
+    "extendedStats.interceptMarks" : "IM", 
+    "extendedStats.scoreLaunches" : "SL", 
+    "extendedStats.kickins" : "KIN", 
+    "extendedStats.kickinsPlayon" : "KIPO",
+    "marksInside50" : "Mi50",
+    "tacklesInside50" : "Ti50",
+    "goalAssists" : "GA",
+    "extendedStats.groundBallGets" : "GBG",
+
+}
+
+RelevantTeamStats = [
+        "kicks","disposals", "tackles", 
+        "contestedPossessions", "uncontestedPossessions", "clearances.totalClearances"
+]
+
+RelevantStoppageStats = [
+        "kicks", "disposals", "tackles", "contestedPossessions", 
+        "clearances.centreClearances", "clearances.stoppageClearances", 
+        "extendedStats.groundBallGets", "extendedStats.centreBounceAttendances"
+        ]
+
+RelevantTransitionStats = [
+        "uncontestedPossessions", "kicks", "handballs",
+        "inside50s", "marksInside50", "rebound50s", "bounces",
+        "metresGained", "extendedStats.kickEfficiency", 
+        "extendedStats.marksOnLead", "extendedStats.scoreLaunches" 
+        ]
+
+RelevantMidfieldStats = [
+        "uncontestedPossessions", "contestedPossessions", "goals", "kicks", "handballs", "disposals", "tackles", "inside50s", 
+        "marksInside50", "clearances.totalClearances",
+        "disposalEfficiency", "rebound50s", 
+        "goalAssists", "tacklesInside50", "metresGained", 
+        "extendedStats.groundBallGets", "extendedStats.scoreLaunches", 
+        "extendedStats.centreBounceAttendances", 
+        ]
+
+RelevantHalfbackStats = [
+        "uncontestedPossessions", "kicks", "disposals", "tackles", "bounces",
+        "inside50s", "contestedMarks", "disposalEfficiency", "rebound50s", 
+        "metresGained", "extendedStats.kickEfficiency", 
+        "extendedStats.marksOnLead", "extendedStats.interceptMarks", 
+        "extendedStats.scoreLaunches", "extendedStats.kickins", "extendedStats.kickinsPlayon", 
+        ]
+
+RelevantRuckStats = [
+        "tackles", "contestedPossessions", "marksInside50", "contestedMarks", "hitouts", 
+        "intercepts", "clearances.centreClearances", "clearances.stoppageClearances", "extendedStats.marksOnLead", 
+        "extendedStats.interceptMarks", "extendedStats.hitoutsToAdvantage", "extendedStats.centreBounceAttendances"
+        ]
+
+
+
+def ProcessRelevantPlayerFantasyPoints(stats : pd.DataFrame) -> pd.DataFrame:
     # Select relevant columns and filter out finals
-    playerData = stats[[
-        "round.roundNumber", "round.name", "team.name", "venue.name", "home.team.name", "away.team.name",
-        "player.player.player.givenName", "player.player.player.surname", "dreamTeamPoints", "teamStatus"
-        ]]
+    playerData = stats[RelevantDataFields]
 
     # remove finals 
     playerData = playerData[~playerData["round.name"].str.contains("final", case=False, na=False)]
@@ -18,61 +104,156 @@ def GetPlayerFantasyPoints(stats) :
         axis=1
     )
 
+    # combine player names
+    playerData["playerNames"] = playerData["player.player.player.givenName"] + " " + playerData["player.player.player.surname"]
+    playerData.drop(columns="player.player.player.givenName", inplace=True)
+    playerData.drop(columns="player.player.player.surname", inplace=True)
+
     return playerData
 
-# //
-# 
-# GET AVERAGE PFPG (Points For Per Game) PER TEAM
-# 
-# //
 
-def TeamPointsForPerRound(playerData) : 
-    # Group by team and round, summing the dreamTeamPoints
-    teamPointsForPerGame = (
-        playerData.groupby(["team.name", "round.roundNumber"], as_index=False)
-        .agg(dreamTeamPoints=("dreamTeamPoints", "sum"))
+def AggregatePlayerStatsPerTeam(playerStats: pd.DataFrame, filters: list[str], stats: str) -> pd.DataFrame :
+    
+    # Group by groupColumn and round, aggregating relevant stats
+    statGroupings = filters + ["round.roundNumber", "Year"]
+
+    aggregatedPoints = (
+        playerStats.groupby(statGroupings, as_index=False)
+        .agg(values=(stats, "sum"))
     )
 
     # Pivot the table: rows = teams, columns = rounds, values = dreamTeamPoints
-    teamPointsForPerGame = teamPointsForPerGame.pivot(
-        index="team.name", columns="round.roundNumber", values="dreamTeamPoints"
+    table = aggregatedPoints.pivot(
+        index=filters[0], columns=["Year", "round.roundNumber"], values="values"
     ).fillna(0)  # Fill NaNs with 0 for rounds where teams didn't score
 
-    # Calculate the average per team, excluding 0.0 values
-    teamPointsForPerGame["Avg_PFPG"] = teamPointsForPerGame.replace(0.0, pd.NA).mean(axis=1, skipna=True).astype(float).round(2)
-    # Mask invalid values
+    return table
 
-    return teamPointsForPerGame
+def teamStatsMeanPerYear(years : list[str], stats : pd.DataFrame) -> pd.DataFrame:
+    avgTeamStatsPerYear = pd.DataFrame(columns=years)
+    for year in years : 
+        avgTeamStatsPerYear[year] = (
+            stats.xs(key=year, level=0, axis=1)  # Select only columns for this year
+            .replace(0.0, pd.NA)  # Replace 0 with NaN to ignore them in averaging
+            .mean(axis=1, skipna=True)
+            .astype(float)
+            .round(2)
+        )
 
-# //
-# 
-# GET AVERAGE PAPG (Points Against Per Game) PER TEAM
-# 
-# //
-def TeamPointsAgainstPerGame(playerData) : 
-
-    # Group by team and round, summing the dreamTeamPoints
-    teamPointsAgainstPerGame = (
-        playerData.groupby(["opponent", "round.roundNumber"], as_index=False)
-        .agg(dreamTeamPoints=("dreamTeamPoints", "sum"))
-    )
-
-    # Pivot the table: rows = teams, columns = rounds, values = dreamTeamPoints
-    teamPointsAgainstPerGame = teamPointsAgainstPerGame.pivot(
-        index="opponent", columns="round.roundNumber", values="dreamTeamPoints"
-    ).fillna(0)  # Fill NaNs with 0 for rounds where teams didn't score
-
-    # Calculate the average per team, excluding 0.0 values
-    teamPointsAgainstPerGame["Avg_PAPG"] = teamPointsAgainstPerGame.replace(0.0, pd.NA).mean(axis=1, skipna=True).astype(float).round(2)
-
-    return teamPointsAgainstPerGame
+    return avgTeamStatsPerYear
 
 
-# //
-# 
-# GET AVERAGE PFPG (Points For Per Game) PER VENUE
-# 
-# //
+def CalcMeansAndDiff(avgTeamStatsPerYear: pd.DataFrame, label : str, trackTrend : bool = False, isFor : bool = False) -> pd.DataFrame :
+    abv = StatAbV.get(label)
+    if abv is not None:
+        label = abv
+
+    if isFor is True:
+        label += "+"
+    else :
+        label += "-"
+
+    avgTeamStatsPerYear[f"{label} Mean"] = avgTeamStatsPerYear.mean(axis=1).round(2)
+    avgTeamStatsPerYear[f"{label} W Avg"] = avgTeamStatsPerYear.apply(WeightedAverageOfValues, axis=1)
+    avgTeamStatsPerYear[f"{label} Trend"] = AverageDifferential(avgTeamStatsPerYear[f"{label} W Avg"], avgTeamStatsPerYear[f"{label} Mean"])
+
+    leagueMean = avgTeamStatsPerYear[f"{label} W Avg"].mean(axis=0)
+    avgTeamStatsPerYear[f"{label}"] = AverageDifferential(avgTeamStatsPerYear[f"{label} W Avg"], leagueMean)
+
+    if trackTrend :
+        return avgTeamStatsPerYear[[f"{label}", f"{label} Trend"]]
+    else : 
+        return avgTeamStatsPerYear[[f"{label}"]]
+
+
+def AverageStatDiff(years : list[str], stats : pd.DataFrame, label : str, trackTrend : bool = False, isFor : bool = False) -> pd.DataFrame :
+
+    avgTeamStatsPerYear = teamStatsMeanPerYear(years, stats)
+    meansAndDiffs = CalcMeansAndDiff(avgTeamStatsPerYear, label, trackTrend, isFor)
+
+    return meansAndDiffs
+
+
+def GetMarkStats(playerStats : pd.DataFrame, combinedTeamStats : pd.DataFrame, years : list[str], teamFilter: str, pointsFor: bool) -> pd.DataFrame:
+    '''Returns Mark and Uncontested Marks differentials to the league averages'''
+
+    markStats = []
+    marksFor = AggregatePlayerStatsPerTeam(playerStats, [teamFilter], "marks")
+    marksForDiff = AverageStatDiff(years, marksFor, "marks", False, pointsFor)
+    
+    markStats.append(marksForDiff)
+
+    contestedMarksFor = AggregatePlayerStatsPerTeam(playerStats, [teamFilter], "contestedMarks")
+    uncontestedMarksFor = marksFor - contestedMarksFor
+    uncontestedMarksForDiff = AverageStatDiff(years, uncontestedMarksFor, "UM", False, pointsFor)
+
+    markStats.append(uncontestedMarksForDiff)
+
+    combinedTeamStats = pd.concat([combinedTeamStats] + markStats, axis=1)
+    
+    return combinedTeamStats
+
+def GetStatsRatioDiff(playerStats : pd.DataFrame, stats01: str, stats02: str, label: str, combinedTeamStats : pd.DataFrame, years : list[str], teamFilter: str, pointsFor: bool) -> pd.DataFrame:
+    # gather marks
+
+    accuracyStats = []
+    goalsFor = AggregatePlayerStatsPerTeam(playerStats, [teamFilter], stats01)
+    behindsFor = AggregatePlayerStatsPerTeam(playerStats, [teamFilter], stats02)
+    totalShotsFor = goalsFor + behindsFor
+    accuracyForPercentage = (goalsFor / totalShotsFor).round(2)
+    accuracyForPercentaageDiff = AverageStatDiff(years, accuracyForPercentage, label, False, pointsFor)
+    accuracyStats.append(accuracyForPercentaageDiff)
+
+    combinedTeamStats = pd.concat([combinedTeamStats] + accuracyStats, axis=1)
+    
+    return combinedTeamStats
+
+
+def TeamStatDifferentials(playerStats : pd.DataFrame, relevantStats: list[str], pointsFor: bool, positionFilter: list[str] = None, calcGoalAccuracy: bool = False) -> pd.DataFrame:
+
+    # Get unique years from the data
+    years = sorted(playerStats["Year"].unique())
+
+    teamTypeFilter = "team.name" if pointsFor else "opponent"
+
+    # filter by positions
+    if positionFilter is not None :
+        playerStats = playerStats[playerStats["player.player.position"].isin(positionFilter)]
+
+    # Get aggregated fantasy points for and against per team
+    teamPointsForPerGame = AggregatePlayerStatsPerTeam(playerStats, [teamTypeFilter], "dreamTeamPoints")
+
+    # Calculate the average per team per year, excluding 0.0 values
+    combinedTeamStats = AverageStatDiff(years, teamPointsForPerGame, "FP", True, pointsFor)
+
+    # Mark Stats
+    combinedTeamStats = GetMarkStats(playerStats, combinedTeamStats, years, teamTypeFilter, pointsFor)
+    combinedTeamStats = GetStatsRatioDiff(playerStats, "kicks", "handballs", "KR", combinedTeamStats, years, teamTypeFilter, pointsFor)
+    
+    if calcGoalAccuracy : 
+        combinedTeamStats = GetStatsRatioDiff(playerStats, "goals", "behinds", "GR", combinedTeamStats, years, teamTypeFilter, pointsFor)
+
+    relevantTeamStatDFs = []  # Create an empty list to store DataFrames
+    # these need to be divided per round
+    for stats in relevantStats:
+        aggStatsFor = AggregatePlayerStatsPerTeam(playerStats, [teamTypeFilter], stats)
+        statAvgFor = AverageStatDiff(years, aggStatsFor, stats, False, pointsFor)
+        relevantTeamStatDFs.append(statAvgFor)
+
+    # Now concatenate all DataFrames in the list
+    combinedTeamStats = pd.concat([combinedTeamStats] + relevantTeamStatDFs, axis=1)
+
+
+    print(f"\n{combinedTeamStats}")
+    
+    return combinedTeamStats
+
+
+
+def AverageDifferential(sample : float, avg : float) -> float: 
+    diff = (-1 * (1 - (sample / avg)) * 100).round(2) 
+    return diff
+
 
 
 def TeamPointsPerGamePerVenue(playerData) : 
@@ -87,16 +268,6 @@ def TeamPointsPerGamePerVenue(playerData) :
 
     return teamPointsPerGamePerVenue
 
-
-# //
-# 
-# CALC DIFFERENTIALS PER TEAM
-# 
-# //
-
-def AverageDifferential(sample, avg) : 
-    diff = (-1 * (1 - sample / avg) * 100).astype(float).round(2)  # Exclude "Avg_PPG" from calculation
-    return diff
 
 
 def AverageDifferentialsPerTeam(playerData, teamName, teamPointsForPerGame, teamPointsAgainstPerGame, teamPointsPerGamePerVenue) :
@@ -140,14 +311,9 @@ def AverageDifferentialsPerTeam(playerData, teamName, teamPointsForPerGame, team
     gamesForTeam["Venue_AVG"] = venueAvgPFPG["dreamTeamPoints"]
     gamesForTeam["PPV_diff"] = diffPV
 
-    print("")
-    print("TEAM: " + teamName)
-    print(gamesForTeam)
-    print("")
-
     return gamesForTeam
 
-def WeightedAverageOfValues(collection : list[float]) :
+def WeightedAverageOfValues(collection : list[float]) -> float:
     numerator = 0
     denominator = 0
     for i, item in enumerate(collection):
@@ -157,3 +323,11 @@ def WeightedAverageOfValues(collection : list[float]) :
         denominator += weight
 
     return (numerator / denominator)
+
+
+# Function for weighted average
+def WeightedAverageOfValues(collection: pd.Series) -> float:
+    weights = range(1, len(collection) + 1)  # Weights: [1, 2, 3] for 3 years
+    weighted_sum = sum(collection * weights)  # Multiply values by weights and sum
+    total_weight = sum(weights)  # Sum of weights
+    return round(weighted_sum / total_weight, 2)  # Compute weighted average
