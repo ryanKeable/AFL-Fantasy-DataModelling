@@ -1,90 +1,127 @@
 import pandas as pd
+import os
+import glob
 from DataProfilingFunc import *
 from DataProfilingData import *
 
-# Load CSV files
-filePath = "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/"
+importFilePath = "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/Import/"
+exportFilePath = "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/Export/"
+playerStatsFlieName = "playerStats_22_to_24_AFL.csv"
+fixtureFlieName = "Fixture_data_2025.csv"
 
-flieNames = ["player_stats_data_2022.csv", "player_stats_data_2023.csv", "player_stats_data_2024.csv"]
-playerStatsFlieName = "PlayerStats_AFL.csv"
-playerStatsRaw = []
-playerStats = []
-teamPointsForPerGame = []
-teamPointsAgainstPerGame = []
-teamPointsPerGamePerVenue = []
+def CleanPreviousExports():
+    # Get all files in the folder
+    files = glob.glob(os.path.join(exportFilePath, "*"))
 
-teamStatColumns = ["PointsPerGame", "PointsAgainstPerGame", "PointsPerVenue"]
-teamStats = pd.DataFrame(columns=teamStatColumns)
+    # Delete each file
+    for file in files:
+        if os.path.isfile(file):  # Ensure it's a file
+            os.remove(file)
 
-def ReadPlayerStats()  -> pd.DataFrame:
-    rawStats = pd.read_csv(filePath + playerStatsFlieName)
+def Get2025Fixture() -> pd.DataFrame:
+    fixture = pd.read_csv(importFilePath + fixtureFlieName)
+    return fixture
+
+# Process player stats
+def ProcessPlayerStats() -> pd.DataFrame:
+    rawStats = pd.read_csv(importFilePath + playerStatsFlieName)
     processedStats = ProcessRelevantPlayerFantasyPoints(rawStats)
+    return processedStats
 
-    teamStatsFor = TeamStatDifferentials(processedStats[:], RelevantTeamStats, True, calcGoalAccuracy=True)
-    teamStatsFor.to_csv(filePath + "teamStatsFor.csv", index=True)
+
+
+def WriteTablesToCSV(dataSets : list[pd.DataFrame]) :
     
-    teamStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantTeamStats, False, calcGoalAccuracy=True)
-    teamStatsAgainst.to_csv(filePath + "teamStatsAgainst.csv", index=True)
+    for table in dataSets :
+        fileName = table.title
+
+        # clear mean noise    
+        table = table.drop(columns=[col for col in table.columns if "mean" in col.lower()])
+        if "League Average" in table.index : 
+            table = table.drop(index="League Average")        
+        
+        print(f"\n{fileName}")
+        print(f"\n{table}")
+        
+        table.to_csv(exportFilePath + f"{fileName}.csv", index=True)
+
     
-    backStatsFor = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, True, BackPositionTitles)
-    backStatsFor.to_csv(filePath + "backStatsFor.csv", index=True)
+
+def GenerateTeamProfiles(processedStats) -> pd.DataFrame:
+
+    generalTeamStatsFor = TeamStatDifferentials("GeneralTeamStatsFor", processedStats[:], RelevantTeamStats, True)
+    generalTeamStatsAgainst = TeamStatDifferentials("GeneralTeamStatsAgainst", processedStats[:], RelevantTeamStats, True)
     
-    backStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, False, BackPositionTitles)
-    backStatsAgainst.to_csv(filePath + "backStatsAgainst.csv", index=True)
+    WriteTablesToCSV([generalTeamStatsFor, generalTeamStatsAgainst])
 
-    midStatsFor = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, True, MidfieldPositionTitles)
-    midStatsFor.to_csv(filePath + "midStatsFor.csv", index=True)
 
-    midStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, False, MidfieldPositionTitles)
-    midStatsAgainst.to_csv(filePath + "midStatsAgainst.csv", index=True)
+
+def GenerateRuckProfiles(processedStats : pd.DataFrame, fixture : pd.DataFrame) -> pd.DataFrame:
+
+    statsToProfile = RelevantTeamStats + RelevantRuckStats
+    ruckStatsFor = TeamStatDifferentials("RuckStatsFor", processedStats[:], statsToProfile, True, RuckPositionTitle)
+    ruckStatsAgainst = TeamStatDifferentials("RuckStatsAgainst", processedStats[:], statsToProfile, False, RuckPositionTitle)
     
-    transitionStatsFor = TeamStatDifferentials(processedStats[:], RelevantTransitionStats, True, TransitionPositionTitles)
-    transitionStatsFor.to_csv(filePath + "transitionStatsFor.csv", index=True)
+    ruckStatsForLeagueAvg = ruckStatsFor.loc[["League Average"]].copy()
+    Xerri = PlayerStatDifferentials(processedStats, ruckStatsForLeagueAvg, "Tristan Xerri", statsToProfile)
 
-    transitionStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantTransitionStats, True, TransitionPositionTitles)
-    transitionStatsAgainst.to_csv(filePath + "transitionStatsAgainst.csv", index=True)
-
-
-ReadPlayerStats()
-
-
-
-# print(f"\nteamPointsForPerGame.index")
-# teamNames = teamPointsForPerGame[0].index.sort_values()
-# print(f"\n{teamNames}")
-
-# averageTeamPointsPerYear = pd.DataFrame(index=teamNames)
-
-# averageTeamPointsPerYear["2022"] = teamPointsForPerGame[0]["Avg_PFPG"]
-# averageTeamPointsPerYear["2023"] = teamPointsForPerGame[1]["Avg_PFPG"]
-# averageTeamPointsPerYear["2024"] = teamPointsForPerGame[2]["Avg_PFPG"]
-
-# weightedAverages = []
-# avgDifferentials = []
-# for team in averageTeamPointsPerYear.index : 
-#     weightedAverage = WeightedAverageOfValues(averageTeamPointsPerYear.loc[team]).__round__(2)
-#     weightedAverages.append(weightedAverage)
-#     avg2024 = averageTeamPointsPerYear.loc[team][2]
+    roundOneFixture = fixture[fixture["round.name"] == "Round 1"]
     
-#     print(f"\n team {team} avg2024 {avg2024}")
+    # Get Xerri's team name
+    xerriTeam = Xerri["team.name"].iloc[0]
 
-#     avgDifferentials.append(AverageDifferential(avg2024, weightedAverage))
+    # Find the fixture where North Melbourne is playing
+    xerriFixture = roundOneFixture[
+        (roundOneFixture["home.team.name"] == xerriTeam) | (roundOneFixture["away.team.name"] == xerriTeam)
+    ]
 
-# averageTeamPointsPerYear["wAVG"] = weightedAverages
-# averageTeamPointsPerYear["Diff"] = avgDifferentials
-# averageTeamPointsPerYear = averageTeamPointsPerYear.sort_values("Diff", ascending=False)
-# print(f"\n{averageTeamPointsPerYear}")
+    # Determine the opponent
+    xerriFixture["opponent"] = xerriFixture.apply(
+        lambda row: row["away.team.name"] if row["home.team.name"] == xerriTeam else row["home.team.name"], axis=1
+    )
+    
+    Xerri.drop("team.name", axis=1, inplace=True)
+    DPrint(Xerri)
+    
+    opponentProfile = ruckStatsAgainst[ruckStatsAgainst.index == xerriFixture["opponent"].iloc[0]]
+    opponentProfile.title = "Western Bulldogs"
+    DPrint(opponentProfile)
 
-# # Initialize empty DataFrame for final results
-# FinalTeamPFPA_2024 = pd.DataFrame()
+    Xerri.loc[xerriFixture["opponent"].iloc[0]] = opponentProfile
+    
+
+    WriteTablesToCSV([Xerri, opponentProfile])
 
 
-# # Loop through teams, get differentials per team and concat results
-# for team in playerStatsRaw[2]["team.name"].drop_duplicates().sort_values() : 
-#     team_df = AverageDifferentialsPerTeam(playerStats[2], team, teamPointsForPerGame[2], teamPointsAgainstPerGame[2], teamPointsPerGamePerVenue[2])
-#     FinalTeamPFPA_2024 = pd.concat([FinalTeamPFPA_2024, team_df])  # Append instead of overwriting
+
+CleanPreviousExports()
+processedStats = ProcessPlayerStats()
+fixture = Get2025Fixture()
+
+# GenerateTeamProfiles(processedStats)
+GenerateRuckProfiles(processedStats, fixture)
 
 
-# #save to CSV:
-# FinalTeamPFPA_2024.set_index("team.name")
-# FinalTeamPFPA_2024.to_csv(filePath + "FinalTeamPFPA_2024.csv", index=True).round(2)
+
+
+    # teamStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantTeamStats, False, calcGoalAccuracy=True)
+    # teamStatsAgainst.to_csv(filePath + "teamStatsAgainst.csv", index=True)
+    
+    # backStatsFor = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, True, BackPositionTitles)
+    # backStatsFor.to_csv(filePath + "backStatsFor.csv", index=True)
+    
+    # backStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, False, BackPositionTitles)
+    # backStatsAgainst.to_csv(filePath + "backStatsAgainst.csv", index=True)
+
+    # midStatsFor = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, True, MidfieldPositionTitles)
+    # midStatsFor.to_csv(filePath + "midStatsFor.csv", index=True)
+
+    # midStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, False, MidfieldPositionTitles)
+    # midStatsAgainst.to_csv(filePath + "midStatsAgainst.csv", index=True)
+    
+    # transitionStatsFor = TeamStatDifferentials(processedStats[:], RelevantTransitionStats, True, TransitionPositionTitles)
+    # transitionStatsFor.to_csv(filePath + "transitionStatsFor.csv", index=True)
+
+    # transitionStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantTransitionStats, False, TransitionPositionTitles)
+    # transitionStatsAgainst.to_csv(filePath + "transitionStatsAgainst.csv", index=True)
+

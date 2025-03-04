@@ -11,15 +11,13 @@ stats_data_2024 <- fetch_player_stats(2024) %>% mutate(Year = 2024)
 
 # Combine all three years into one sheet with the year as a column 
 print("Combine Player Stats 2022-2024")
-playerStats_AFL <- bind_rows(stats_data_2022, stats_data_2023, stats_data_2024)
+playerStats_22_to_24_AFL <- bind_rows(stats_data_2022, stats_data_2023, stats_data_2024)
 
 
 print("Write Data to CSVs")
+
 # Save the dataset to a CSV file
-write.csv(stats_data_2022, "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/player_stats_data_2022.csv", row.names = FALSE)
-write.csv(stats_data_2023, "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/player_stats_data_2023.csv", row.names = FALSE)
-write.csv(stats_data_2024, "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/player_stats_data_2024.csv", row.names = FALSE)
-write.csv(playerStats_AFL, "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/PlayerStats_AFL.csv", row.names = FALSE)
+write.csv(playerStats_22_to_24_AFL, "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/Import/playerStats_22_to_24_AFL.csv", row.names = FALSE)
 
 
 # print("Fetch Player Stats from FootyWire and AFLTables for 2024")
