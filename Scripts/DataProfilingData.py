@@ -88,15 +88,16 @@ RelevantRuckStats = [
         ]
 
 
-FantasyPointsLUT = {
-    "contestedPossessions": 0,  # No direct fantasy points
+FantasyPointWeightsLUT = {
+    "uncontestedPossessions": 1,  # No direct fantasy points
+    "contestedPossessions": 1,  # No direct fantasy points
     "marks": 3,  # Includes both contested & uncontested
-    "contestedMarks": 0,  # No direct fantasy points
-    "uncontestedMarks": 0,  # No direct fantasy points
+    "contestedMarks": 1,  # No direct fantasy points
+    "uncontestedMarks": 1,  # No direct fantasy points
     "kicks": 3,
     "handballs": 2,
     "tackles": 4,
-    "clearances.totalClearances": 0,  # No direct fantasy points
+    "clearances.totalClearances": 1,  # No direct fantasy points
     "goals": 6,
     "behinds": 1,
     "freesFor": 1,
@@ -105,10 +106,17 @@ FantasyPointsLUT = {
     "extendedStats.kickinsPlayon" : 3
 }
 
-FantasyProjectionWeights = {
-    "uncontestedPossessions": 0,  
-    "clearances.totalClearances": 0,
-    "uncontestedMarks": 0,
-    "extendedStats.kickinsPlayon" : 0,
-    
+
+PureFantasyPointWeightsLUT = {
+    "marks": 3,  # Includes both contested & uncontested
+    "kicks": 3,
+    "handballs": 2,
+    "tackles": 4,
+    "goals": 6,
+    "behinds": 1,
+    "freesFor": 1,
+    "freesAgainst": -3,
+    "hitouts" : 1,
+    "extendedStats.kickinsPlayon" : 3
 }
+

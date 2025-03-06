@@ -9,6 +9,9 @@ exportFilePath = "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Dat
 playerStatsFlieName = "playerStats_22_to_24_AFL.csv"
 fixtureFlieName = "Fixture_data_2025.csv"
 
+teamFilter = "team.name"
+opponentFilter = "opponent"
+
 def CleanPreviousExports():
     # Get all files in the folder
     files = glob.glob(os.path.join(exportFilePath, "*"))
@@ -28,29 +31,25 @@ def ProcessPlayerStats() -> pd.DataFrame:
     processedStats = ProcessRelevantPlayerFantasyPoints(rawStats)
     return processedStats
 
-
+def DropLeageAveragesAndMean(table : pd.DataFrame) :  
+    # clear mean noise    
+    table = table.drop(columns=[col for col in table.columns if "mean" in col.lower()])
+    if "League Average" in table.index : 
+        table = table.drop(index="League Average")        
+    
+    return table
 
 def WriteTablesToCSV(dataSets : list[pd.DataFrame]) :
     
     for table in dataSets :
-        fileName = table.title
-
-        # clear mean noise    
-        table = table.drop(columns=[col for col in table.columns if "mean" in col.lower()])
-        if "League Average" in table.index : 
-            table = table.drop(index="League Average")        
-        
-        print(f"\n{fileName}")
-        print(f"\n{table}")
-        
+        fileName = table.title     
         table.to_csv(exportFilePath + f"{fileName}.csv", index=True)
 
-    
 
 def GenerateTeamProfiles(processedStats) -> pd.DataFrame:
 
-    generalTeamStatsFor = TeamStatDifferentials("GeneralTeamStatsFor", processedStats[:], RelevantTeamStats, True)
-    generalTeamStatsAgainst = TeamStatDifferentials("GeneralTeamStatsAgainst", processedStats[:], RelevantTeamStats, True)
+    generalTeamStatsFor = TeamStatDifferentials("GeneralTeamStatsFor", processedStats[:], RelevantTeamStats, teamFilter)
+    generalTeamStatsAgainst = TeamStatDifferentials("GeneralTeamStatsAgainst", processedStats[:], RelevantTeamStats, opponentFilter)
     
     WriteTablesToCSV([generalTeamStatsFor, generalTeamStatsAgainst])
 
@@ -58,14 +57,19 @@ def GenerateTeamProfiles(processedStats) -> pd.DataFrame:
 
 def GenerateRuckProfiles(processedStats : pd.DataFrame, fixture : pd.DataFrame) -> pd.DataFrame:
 
+    writeableTables = []
     statsToProfile = RelevantTeamStats + RelevantRuckStats
-    ruckStatsFor = TeamStatDifferentials("RuckStatsFor", processedStats[:], statsToProfile, True, RuckPositionTitle)
-    ruckStatsAgainst = TeamStatDifferentials("RuckStatsAgainst", processedStats[:], statsToProfile, False, RuckPositionTitle)
     
-    ruckStatsForLeagueAvg = ruckStatsFor.loc[["League Average"]].copy()
+    ruckStatsFor = TeamStatDifferentials("RuckStatsFor", processedStats[:], statsToProfile, teamFilter, RuckPositionTitle)
+    writeableTables.append( ruckStatsFor )
+    
+    ruckStatsAgainst = TeamStatDifferentials("RuckStatsAgainst", processedStats[:], statsToProfile, opponentFilter, RuckPositionTitle)
+    writeableTables.append( ruckStatsAgainst )
+    
+    ruckStatsForLeagueAvg = writeableTables[0].loc[["League Average"]].copy()
     Xerri = PlayerStatDifferentials(processedStats, ruckStatsForLeagueAvg, "Tristan Xerri", statsToProfile)
 
-    roundOneFixture = fixture[fixture["round.name"] == "Round 1"]
+    roundOneFixture = fixture[fixture["round.name"] == "Round 2"]
     
     # Get Xerri's team name
     xerriTeam = Xerri["team.name"].iloc[0]
@@ -73,7 +77,7 @@ def GenerateRuckProfiles(processedStats : pd.DataFrame, fixture : pd.DataFrame) 
     # Find the fixture where North Melbourne is playing
     xerriFixture = roundOneFixture[
         (roundOneFixture["home.team.name"] == xerriTeam) | (roundOneFixture["away.team.name"] == xerriTeam)
-    ]
+    ].copy()
 
     # Determine the opponent
     xerriFixture["opponent"] = xerriFixture.apply(
@@ -81,47 +85,80 @@ def GenerateRuckProfiles(processedStats : pd.DataFrame, fixture : pd.DataFrame) 
     )
     
     Xerri.drop("team.name", axis=1, inplace=True)
-    DPrint(Xerri)
-    
+
     opponentProfile = ruckStatsAgainst[ruckStatsAgainst.index == xerriFixture["opponent"].iloc[0]]
-    opponentProfile.title = "Western Bulldogs"
-    DPrint(opponentProfile)
+    opponentName = xerriFixture["opponent"].iloc[0]
+    DPrint(opponentName, "opponentName")
 
-    Xerri.loc[xerriFixture["opponent"].iloc[0]] = opponentProfile
+    Xerri = pd.concat([Xerri, opponentProfile.loc[[opponentName]]])
+    DPrint(Xerri)
+
+    #compare means
+    # Identify columns that contain 'Mean'
+    # no we want to scale our player's mean based off the teams differentials
+    mean_cols = [col for col in Xerri.columns if "Mean" in col]
+    diff_cols = [col for col in Xerri.columns if not "Mean" in col and not "Trend" in col]
+
+    # Extract relevant rows
+    playerStatMeans = Xerri.loc["Tristan Xerri", mean_cols]
     
+    # Strip " W Mean" from playerStatMeans index
+    playerStatMeans.index = playerStatMeans.index.str.replace(" W Mean", "")
 
-    WriteTablesToCSV([Xerri, opponentProfile])
+    opponentStatScalars = InvertAverageDifferentialBasis(Xerri.loc["Melbourne", diff_cols])
+
+    # Apply the adjustment formula
+    # because these have different index names they cannot be multiplied together in this method
+    adjusted_xerri = playerStatMeans * opponentStatScalars
 
 
+
+    # Remove " W Mean" from column names to match FantasyPointWeightsLUT keys
+    adjusted_xerri.index = adjusted_xerri.index.str.replace(" W Mean", "")
+
+    # Filter only the stats that exist in the FantasyPointWeightsLUT
+    expectedFantasyPoints = {
+        stat: adjusted_xerri[stat] * PureFantasyPointWeightsLUT[stat]
+        for stat in PureFantasyPointWeightsLUT.keys() if stat in adjusted_xerri
+    }
+
+
+
+    fantasy_points_series = pd.Series(expectedFantasyPoints, name="Fantasy Points")
+    total_sum = sum(expectedFantasyPoints.values())    # Add the total impact as a separate value
+    fantasy_points_series["Total Fantasy Points"] = total_sum
+    
+    scoreRating = AverageDifferentialBasis(total_sum, playerStatMeans["dreamTeamPoints"])
+    output = f"{scoreRating} against {opponentName}"
+
+    # Display the results
+
+
+    DPrint(expectedFantasyPoints, "expectedFantasyPoints")
+    DPrint(fantasy_points_series, "fantasy_points_series")
+    DPrint(output, "output")
+
+    # concat generates a new data frame that clears our attribute >.<
+    Xerri.title = "Xerri" 
+    
+    writeableTables.append(Xerri) 
+
+    WriteTablesToCSV(writeableTables)
+
+def GenerateScoresPerRoundForPlayer(playerName : str, fixture : pd.DataFrame, statsToCompare : pd.DataFrame)
+    
 
 CleanPreviousExports()
 processedStats = ProcessPlayerStats()
 fixture = Get2025Fixture()
 
-# GenerateTeamProfiles(processedStats)
+GenerateTeamProfiles(processedStats)
 GenerateRuckProfiles(processedStats, fixture)
 
+DPrint("done!")
 
 
 
-    # teamStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantTeamStats, False, calcGoalAccuracy=True)
-    # teamStatsAgainst.to_csv(filePath + "teamStatsAgainst.csv", index=True)
-    
-    # backStatsFor = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, True, BackPositionTitles)
-    # backStatsFor.to_csv(filePath + "backStatsFor.csv", index=True)
-    
-    # backStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, False, BackPositionTitles)
-    # backStatsAgainst.to_csv(filePath + "backStatsAgainst.csv", index=True)
 
-    # midStatsFor = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, True, MidfieldPositionTitles)
-    # midStatsFor.to_csv(filePath + "midStatsFor.csv", index=True)
 
-    # midStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, False, MidfieldPositionTitles)
-    # midStatsAgainst.to_csv(filePath + "midStatsAgainst.csv", index=True)
-    
-    # transitionStatsFor = TeamStatDifferentials(processedStats[:], RelevantTransitionStats, True, TransitionPositionTitles)
-    # transitionStatsFor.to_csv(filePath + "transitionStatsFor.csv", index=True)
-
-    # transitionStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantTransitionStats, False, TransitionPositionTitles)
-    # transitionStatsAgainst.to_csv(filePath + "transitionStatsAgainst.csv", index=True)
 
