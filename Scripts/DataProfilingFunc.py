@@ -35,6 +35,10 @@ def ExpWeightedAverageOfValues(collection: pd.Series, base: float = 6) -> float:
     Returns:
         float: The exponentially weighted average.
     """
+
+    #clear out any Nan values
+    collection = collection.dropna()
+
     n = len(collection)
     weights = np.array([base ** i for i in range(n)])  # Exponential weights: [1, base, base^2, ...]
     
@@ -52,10 +56,7 @@ def ProcessRelevantPlayerFantasyPoints(stats : pd.DataFrame) -> pd.DataFrame:
 
     # Add opponents to playerData
     playerData["opponent"] = playerData.apply(
-        lambda row: row["away.team.name"] if row["team.name"] in row["home.team.name"]
-        else row["home.team.name"] if row["team.name"] in row["away.team.name"]
-        else None,
-        axis=1
+        lambda row: row["away.team.name"] if row["home.team.name"] == row["team.name"] else row["home.team.name"], axis=1
     )
 
     # combine player names
@@ -66,14 +67,43 @@ def ProcessRelevantPlayerFantasyPoints(stats : pd.DataFrame) -> pd.DataFrame:
     return playerData
 
 
-def SumTeamStatByRound(playerStats: pd.DataFrame, filter: str, stat: str) -> pd.DataFrame :
+def SumTeamStatByRound(playerStats: pd.DataFrame, groupFilter: str, stat: str) -> pd.DataFrame :
     
     # Group by groupColumn and round, aggregating relevant stats
-    statGroupings = [filter, "round.roundNumber", "Year"]
+    statGroupings = [groupFilter, "round.roundNumber", "Year"]
 
     aggregatedStats = (
         playerStats.groupby(statGroupings, as_index=False)
         .agg(values=(stat, "sum"))
+    )
+
+    # Pivot the table: rows = teams, columns = rounds, values = dreamTeamPoints
+    table = aggregatedStats.pivot(
+        index=statGroupings[0], columns=["Year", "round.roundNumber"], values="values"
+    )
+
+    return table
+
+def SumTeamStatByRoundAgainstOpp(playerStats: pd.DataFrame, filter: str, opponent: str, positionFilter: list[str], isPlayer : bool) -> pd.DataFrame :
+    
+    
+    if isPlayer:
+        playerStats = playerStats[playerStats["playerName"] == filter] 
+    else :        
+        playerStats = playerStats[playerStats["team.name"] == filter] 
+
+    # Filter for opponent
+    playerStats = playerStats[playerStats["opponent"] == opponent] 
+    
+    # Filter for position
+    playerStats = playerStats[playerStats["player.player.position"].isin(positionFilter)]
+
+    # Group by groupColumn and round, aggregating relevant stats
+    statGroupings = ["team.name", "round.roundNumber", "Year"]
+
+    aggregatedStats = (
+        playerStats.groupby(statGroupings, as_index=False)
+        .agg(values=("dreamTeamPoints", "sum"))
     )
 
     # Pivot the table: rows = teams, columns = rounds, values = dreamTeamPoints
@@ -89,7 +119,7 @@ def StatMeanPerYear(years : list[str], playerStats : pd.DataFrame) -> pd.DataFra
     valid_years = [year for year in years if year in playerStats.columns.get_level_values(0)]
 
     if not valid_years:
-        raise ValueError("None of the specified years are present in the DataFrame.")
+        return None
 
     avgTeamStatsPerYear = pd.DataFrame(columns=years)
     for year in valid_years : 
@@ -103,18 +133,18 @@ def StatMeanPerYear(years : list[str], playerStats : pd.DataFrame) -> pd.DataFra
     return avgTeamStatsPerYear
 
 
-def ComputeStatMeansAndDiff(meanStatPerYear: pd.DataFrame, label : str, reportTrend : bool, importedLeagueAverages : pd.DataFrame = None) -> pd.DataFrame :
+def ComputeStatMeansAndDiff(meanStatPerYear: pd.DataFrame, label : str, reportTrend : bool, importedLeagueAverages : pd.DataFrame = None, weightedAvgBase: float = 6) -> pd.DataFrame :
 
     statData = pd.DataFrame(columns=[f"{label} W Mean", f"{label} Trend", f"{label}"])
     
     rawMean = meanStatPerYear.mean(axis=1, skipna=True).round(3)
         
     # Compute weighted mean
-    statData[f"{label} W Mean"] = meanStatPerYear.apply(ExpWeightedAverageOfValues, axis=1)
+    statData[f"{label} W Mean"] = meanStatPerYear.apply(ExpWeightedAverageOfValues, axis=1, args=(weightedAvgBase,))
     
     # Compute league average
     if importedLeagueAverages is not None : 
-        matching_columns = [col for col in importedLeagueAverages.columns if f"{label} W Mean" in col]
+        matching_columns = [col for col in importedLeagueAverages.columns if f"{label} W Mean" == col]
 
         if matching_columns:  # Check if there is at least one match
             leagueAverage = importedLeagueAverages[matching_columns[0]].values[0]  # Take the first match
@@ -139,10 +169,14 @@ def ComputeStatMeansAndDiff(meanStatPerYear: pd.DataFrame, label : str, reportTr
     return statData
     
 
-def GenerateStatMeansAndDiff(years : list[str], stats : pd.DataFrame, leagueAverages : pd.DataFrame = None, label : str = "", reportTrend : bool = False) -> pd.DataFrame:
+def GenerateStatMeansAndDiff(years : list[str], stats : pd.DataFrame, leagueAverages : pd.DataFrame = None, label : str = "", reportTrend : bool = False, weightedAvgBase: float = 6) -> pd.DataFrame:
 
     statMeanPerYear = StatMeanPerYear(years, stats[:])
-    meansAndDiffs = ComputeStatMeansAndDiff(statMeanPerYear, label, reportTrend, leagueAverages)
+
+    if statMeanPerYear is None :
+        return None
+    
+    meansAndDiffs = ComputeStatMeansAndDiff(statMeanPerYear, label, reportTrend, leagueAverages, weightedAvgBase)
 
     return meansAndDiffs
 
@@ -210,7 +244,7 @@ def PlayerStatDifferentials(rawPlayerStats : pd.DataFrame, leagueAverages : pd.D
     rawPlayerStats = rawPlayerStats[rawPlayerStats["playerName"] == filter] 
 
     if rawPlayerStats.empty:
-        raise ValueError("The specified player is present in the DataFrame.")
+        return None
 
     # Create list to store DataFrames 
     statProfileTables = []

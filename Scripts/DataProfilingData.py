@@ -11,8 +11,9 @@ RelevantDataFields = [
         "freesFor", "freesAgainst"
         ]
 
-MidfieldPositionTitles = ["R", "RR", "C"]
-BackPositionTitles = ["BPL", "BPR", "HBFL", "HBFR"]
+KeyDefsPositionTitles = ["FB", "CHB"]
+MidsPositionTitles = ["R", "RR", "C"]
+DefsPositionTitles = ["BPL", "BPR", "HBFL", "HBFR"]
 TransitionPositionTitles = ["HFFL", "HFFR", "W"]
 RuckPositionTitle = ["RK"]
 
@@ -76,10 +77,11 @@ RelevantMidfieldStats = [
         ]
 
 RelevantHalfbackStats = [
-        "bounces", "inside50s", "disposalEfficiency", "rebound50s", 
+        "inside50s", "disposalEfficiency", "rebound50s", 
         "metresGained", "extendedStats.kickEfficiency", 
-        "extendedStats.marksOnLead", "extendedStats.interceptMarks", 
-        "extendedStats.scoreLaunches", "extendedStats.kickins", "extendedStats.kickinsPlayon", 
+        "extendedStats.interceptMarks", 
+        "extendedStats.scoreLaunches", "extendedStats.kickins", 
+        "extendedStats.kickinsPlayon", 
         ]
 
 RelevantRuckStats = [
@@ -120,3 +122,9 @@ PureFantasyPointWeightsLUT = {
     "extendedStats.kickinsPlayon" : 3
 }
 
+
+RucksToProfile = ["Tristan Xerri", "Max Gawn", "Toby Nankervis", "Tim English"]
+MidsToProfile = ["Andrew Brayshaw", "Jordan Dawson", "Connor Rozee", "Josh Dunkley", "Jack Steele", "Tom Powell", "Jason Horne-Francis"]
+# DefsToProfile = ["Dayne Zorko", "Lachie Whitfield", "Jordan Clark", "Jack Sinclair", "Nasiah Wanganeen-Milera", "Jayden Short"]
+DefsToProfile = ["Dayne Zorko", ]
+WingsToProfile = ["Nic Martin"]

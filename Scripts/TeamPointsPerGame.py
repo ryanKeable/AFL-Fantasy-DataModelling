@@ -26,16 +26,16 @@ def ReadPlayerStats()  -> pd.DataFrame:
     teamStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantTeamStats, False, calcGoalAccuracy=True)
     teamStatsAgainst.to_csv(filePath + "teamStatsAgainst.csv", index=True)
     
-    backStatsFor = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, True, BackPositionTitles)
+    backStatsFor = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, True, DefsPositionTitles)
     backStatsFor.to_csv(filePath + "backStatsFor.csv", index=True)
     
-    backStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, False, BackPositionTitles)
+    backStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantHalfbackStats, False, DefsPositionTitles)
     backStatsAgainst.to_csv(filePath + "backStatsAgainst.csv", index=True)
 
-    midStatsFor = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, True, MidfieldPositionTitles)
+    midStatsFor = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, True, MidsPositionTitles)
     midStatsFor.to_csv(filePath + "midStatsFor.csv", index=True)
 
-    midStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, False, MidfieldPositionTitles)
+    midStatsAgainst = TeamStatDifferentials(processedStats[:], RelevantMidfieldStats, False, MidsPositionTitles)
     midStatsAgainst.to_csv(filePath + "midStatsAgainst.csv", index=True)
     
     transitionStatsFor = TeamStatDifferentials(processedStats[:], RelevantTransitionStats, True, TransitionPositionTitles)
