@@ -133,62 +133,63 @@ def StatMeanPerYear(years : list[str], playerStats : pd.DataFrame) -> pd.DataFra
     return avgTeamStatsPerYear
 
 
-def ComputeStatMeansAndDiff(meanStatPerYear: pd.DataFrame, label : str, reportTrend : bool, importedLeagueAverages : pd.DataFrame = None, weightedAvgBase: float = 6) -> pd.DataFrame :
+def ComputeMeanDiffAndFP(meanStatPerYear: pd.DataFrame, label : str, posFilterDiv: int, reportTrend : bool, weightedAvgBase: float = 6) -> pd.DataFrame :
 
-    statData = pd.DataFrame(columns=[f"{label} W Mean", f"{label} Trend", f"{label}"])
+    statData = pd.DataFrame()
     
+    if posFilterDiv > 0 :
+        meanStatPerYear = meanStatPerYear / posFilterDiv
+
     rawMean = meanStatPerYear.mean(axis=1, skipna=True).round(3)
         
     # Compute weighted mean
     statData[f"{label} W Mean"] = meanStatPerYear.apply(ExpWeightedAverageOfValues, axis=1, args=(weightedAvgBase,))
     
-    # Compute league average
-    if importedLeagueAverages is not None : 
-        matching_columns = [col for col in importedLeagueAverages.columns if f"{label} W Mean" == col]
+    leagueAverage = statData[f"{label} W Mean"].mean(axis=0).round(3)
 
-        if matching_columns:  # Check if there is at least one match
-            leagueAverage = importedLeagueAverages[matching_columns[0]].values[0]  # Take the first match
-        
-    else : 
-        leagueAverage = statData[f"{label} W Mean"].mean(axis=0).round(3)
-    
     # Compute trend and differential
     statData[f"{label} Trend"] = AverageDifferentialBasis(statData[f"{label} W Mean"], rawMean)
-    statData[f"{label}"] = AverageDifferentialBasis(statData[f"{label} W Mean"], leagueAverage)
+    
+    if label in PureFantasyPointWeightsLUT.keys() :
+        statData[f"{label} FP"] = (statData[f"{label} W Mean"] * PureFantasyPointWeightsLUT[label]).round(2)
+    
+    statData[f"{label} Scalar"] = AverageDifferentialBasis(statData[f"{label} W Mean"], leagueAverage)
     
     # Add league average row with a custom index
     statData.loc["League Average"] = {
         f"{label} W Mean": leagueAverage,
         f"{label} Trend": 0.0,
-        f"{label}": 0.0
+        f"{label} Scalar": 0.0
     }
 
     if reportTrend is False :
         statData.drop(columns=[f"{label} Trend"], inplace=True)    
 
+
+
     return statData
     
 
-def GenerateStatMeansAndDiff(years : list[str], stats : pd.DataFrame, leagueAverages : pd.DataFrame = None, label : str = "", reportTrend : bool = False, weightedAvgBase: float = 6) -> pd.DataFrame:
+def GenerateStatMeansAndDiff(years : list[str], stats : pd.DataFrame, posFilterDiv : int, label : str = "", reportTrend : bool = False, weightedAvgBase: float = 6) -> pd.DataFrame:
 
     statMeanPerYear = StatMeanPerYear(years, stats[:])
 
     if statMeanPerYear is None :
         return None
     
-    meansAndDiffs = ComputeStatMeansAndDiff(statMeanPerYear, label, reportTrend, leagueAverages, weightedAvgBase)
+    meansAndDiffs = ComputeMeanDiffAndFP(statMeanPerYear, label, posFilterDiv, reportTrend, weightedAvgBase)
 
     return meansAndDiffs
 
 
-def ComputeUncontestedMarks(rawPlayerStats : pd.DataFrame, years : list[str], filter: str, acummulationMethod, leagueAverages : pd.DataFrame = None, ) -> pd.DataFrame:
+def ComputeUncontestedMarks(rawPlayerStats : pd.DataFrame, years : list[str], filter: str, posFilterDiv, accumulationMethod) -> pd.DataFrame:
     '''Computes Uncontested Marks profile'''
 
-    totalMarksPerYear = acummulationMethod(rawPlayerStats, filter, "marks")
-    totalContestedMarksPerYear = acummulationMethod(rawPlayerStats, filter, "contestedMarks")
+    totalMarksPerYear = accumulationMethod(rawPlayerStats, filter, "marks")
+    totalContestedMarksPerYear = accumulationMethod(rawPlayerStats, filter, "contestedMarks")
     totalUncontestedMarksPerYear = totalMarksPerYear - totalContestedMarksPerYear
 
-    statProfile = GenerateStatMeansAndDiff(years, totalUncontestedMarksPerYear, leagueAverages=leagueAverages, label="uncontestedMarks")
+    statProfile = GenerateStatMeansAndDiff(years, totalUncontestedMarksPerYear, posFilterDiv, label="uncontestedMarks")
 
     return statProfile
 
@@ -203,69 +204,53 @@ def GetLabel(statLabel : str) -> str:
     return label
 
 
-def TeamStatDifferentials(title : str, rawPlayerStats : pd.DataFrame, relevantStats: list[str], filter: str, positionFilter: list[str] = None) -> pd.DataFrame:
+def StatDifferentials(title : str, rawPlayerStats : pd.DataFrame, relevantStats: list[str], filter: str, positionFilter: list[str] = None, meanOfPos : bool = False) -> pd.DataFrame:
 
     # Get unique years from the data
     years = sorted(rawPlayerStats["Year"].unique())
 
+    #filter for early injuries
+    rawPlayerStats = rawPlayerStats[rawPlayerStats["timeOnGroundPercentage"] >= 0.25] 
+
+    #filter for extreme lows
+    rawPlayerStats = rawPlayerStats[rawPlayerStats["dreamTeamPoints"] >= 30] 
+    
     # filter by positions
     if positionFilter is not None :
         rawPlayerStats = rawPlayerStats[rawPlayerStats["player.player.position"].isin(positionFilter)]
 
-    fantasyPointsPerGame = SumTeamStatByRound(rawPlayerStats, filter, "dreamTeamPoints")
-    fantasyStatProfile = GenerateStatMeansAndDiff(years, fantasyPointsPerGame, label="dreamTeamPoints", reportTrend=True)
-    
+    posFilterDiv = 0
+    if meanOfPos :
+        posFilterDiv = len(positionFilter)
+
+
     # Create list to store DataFrames 
-    statProfileTables = [fantasyStatProfile]  
+    statProfileTables = []  
     
     for stat in relevantStats:
         if stat == "uncontestedMarks" :
-            statProfileTables.append(ComputeUncontestedMarks(rawPlayerStats, years, filter, SumTeamStatByRound))
+            statProfileTables.append(ComputeUncontestedMarks(rawPlayerStats, years, filter, posFilterDiv, SumTeamStatByRound))
         else :
             aggStatsFor = SumTeamStatByRound(rawPlayerStats, filter, stat)
-            statProfile = GenerateStatMeansAndDiff(years, aggStatsFor, label=stat)
+            statProfile = GenerateStatMeansAndDiff(years, aggStatsFor, posFilterDiv, label=stat)
             statProfileTables.append(statProfile)
+
+    # compute expected stat avg based on stat modelling
+    fantasyPointsPerGame = SumTeamStatByRound(rawPlayerStats, filter, "dreamTeamPoints")
+    fantasyStatProfile = GenerateStatMeansAndDiff(years, fantasyPointsPerGame, posFilterDiv, label="dreamTeamPoints", reportTrend=True)
+    statProfileTables.append(fantasyStatProfile)
+
 
     # Now concatenate all DataFrames in the list
     combinedStatProfiles = pd.concat(statProfileTables, axis=1)
 
+    averageFantasyPointsAvg = sum(CalcFantasyPointsFromMeansWithLUT(combinedStatProfiles).values())
+
+    combinedStatProfiles["dreamTeamPoints FP"] = averageFantasyPointsAvg.round(2)
+
+    # ReOrderColumns(combinedStatProfiles, "dreamTeamPoints FP", 1)
+        
     combinedStatProfiles.title = title
-    
-    return combinedStatProfiles
-
-
-# requires injecting the league average
-def PlayerStatDifferentials(rawPlayerStats : pd.DataFrame, leagueAverages : pd.DataFrame, filter : str, relevantStats: list[str]) -> pd.DataFrame:
-
-    # Get unique years from the data
-    years = sorted(rawPlayerStats["Year"].unique())
-
-    rawPlayerStats = rawPlayerStats[rawPlayerStats["timeOnGroundPercentage"] >= 0.5] 
-    rawPlayerStats = rawPlayerStats[rawPlayerStats["playerName"] == filter] 
-
-    if rawPlayerStats.empty:
-        return None
-
-    # Create list to store DataFrames 
-    statProfileTables = []
-
-    fantasyPointsPerGame = SumTeamStatByRound(rawPlayerStats, "playerName", "dreamTeamPoints")
-    fantasyStatProfile = GenerateStatMeansAndDiff(years, fantasyPointsPerGame, leagueAverages, "dreamTeamPoints", True)    
-    statProfileTables.append(fantasyStatProfile)  
-
-    for stat in relevantStats:
-        if stat == "uncontestedMarks" :
-            statProfileTables.append(ComputeUncontestedMarks(rawPlayerStats, years, "playerName", SumTeamStatByRound, leagueAverages))
-        else :
-            aggStatsFor = SumTeamStatByRound(rawPlayerStats, "playerName", stat)
-            statProfile = GenerateStatMeansAndDiff(years, aggStatsFor, leagueAverages, stat)
-            statProfileTables.append(statProfile)
-
-    
-    combinedStatProfiles = pd.concat(statProfileTables, axis=1)
-    combinedStatProfiles["team.name"] = rawPlayerStats["team.name"].iloc[0]
-
-    combinedStatProfiles.title = filter
     
     return combinedStatProfiles
 
@@ -285,9 +270,40 @@ def AverageDifferentialPercentage(sample : float, avg : float) -> float:
     diff = (sample / avg).round(2) 
     return diff
 
-
-
 def DPrint(value, label : str = None) :
     if label is not None :
         print(f"\n {label.upper()}")
     print(f"\n{value}")
+
+
+def ReOrderColumns(dataSet : pd.DataFrame, columnName : str, order : int = 0) -> pd.DataFrame :
+    # Reorder columns
+    order = max(order, 0)
+
+    if order > len(dataSet):
+        DPrint(f"index {order} is greater than the amount of columns in the dataset, cannot reorder dataset")
+        return dataSet
+    
+    column = dataSet[columnName]
+    dataSet.drop(columnName, axis=1, inplace=True)
+    dataSet.insert(order, columnName, column)
+
+
+def CalcFantasyPointsFromMeansWithLUT(dataset: pd.DataFrame) -> dict[str, pd.Series] :
+        #compare means
+    # Identify columns that contain 'Mean'
+    # no we want to scale our player's mean based off the teams differentials
+    mean_cols = [col for col in dataset.columns if "W Mean" in col]
+    
+    # Extract relevant rows
+    statMeans = dataset[mean_cols]
+    
+    # Strip " W Mean" from playerStatMeans index
+    statMeans.columns = statMeans.columns.str.replace(" W Mean", "")
+    # Compute expected fantasy points per stat
+    calcFantasyPoints = {
+        stat: statMeans[stat] * PureFantasyPointWeightsLUT[stat]
+        for stat in PureFantasyPointWeightsLUT.keys() if stat in statMeans
+    }
+
+    return calcFantasyPoints

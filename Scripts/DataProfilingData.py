@@ -14,7 +14,7 @@ RelevantDataFields = [
 KeyDefsPositionTitles = ["FB", "CHB"]
 MidsPositionTitles = ["R", "RR", "C"]
 DefsPositionTitles = ["BPL", "BPR", "HBFL", "HBFR"]
-TransitionPositionTitles = ["HFFL", "HFFR", "W"]
+TransitionPositionTitles = ["HFFL", "HFFR", "W", "FPL", "FPR"]
 RuckPositionTitle = ["RK"]
 
 StatAbV = {
@@ -55,11 +55,11 @@ StatAbV = {
 
 
 RelevantTeamStats = [ 
-        "uncontestedPossessions", "contestedPossessions",
-        "marks", "contestedMarks", "uncontestedMarks",
-        "kicks", "handballs", "disposals", 
-        "tackles","clearances.totalClearances",
-        "goals", "behinds", "freesFor", "freesAgainst"
+        "kicks", "handballs", "marks",
+        "tackles", "freesFor", "freesAgainst",
+        "goals", "behinds", 
+        "disposals", "uncontestedPossessions", "contestedPossessions",
+        "contestedMarks", "uncontestedMarks", "clearances.totalClearances",
 ]
 
 RelevantTransitionStats = [
@@ -110,21 +110,20 @@ FantasyPointWeightsLUT = {
 
 
 PureFantasyPointWeightsLUT = {
-    "marks": 3,  # Includes both contested & uncontested
     "kicks": 3,
     "handballs": 2,
+    "marks": 3,  
     "tackles": 4,
-    "goals": 6,
-    "behinds": 1,
     "freesFor": 1,
     "freesAgainst": -3,
     "hitouts" : 1,
-    "extendedStats.kickinsPlayon" : 3
+    "goals": 6,
+    "behinds": 1,
+#     "extendedStats.kickinsPlayon" : 3
 }
 
 
 RucksToProfile = ["Tristan Xerri", "Max Gawn", "Toby Nankervis", "Tim English"]
 MidsToProfile = ["Andrew Brayshaw", "Jordan Dawson", "Connor Rozee", "Josh Dunkley", "Jack Steele", "Tom Powell", "Jason Horne-Francis"]
-# DefsToProfile = ["Dayne Zorko", "Lachie Whitfield", "Jordan Clark", "Jack Sinclair", "Nasiah Wanganeen-Milera", "Jayden Short"]
-DefsToProfile = ["Dayne Zorko", ]
+DefsToProfile = ["Dayne Zorko", "Lachie Whitfield", "Jordan Clark", "Jack Sinclair", "Nasiah Wanganeen-Milera", "Jayden Short", "Lachie Ash"]
 WingsToProfile = ["Nic Martin"]

@@ -8,17 +8,18 @@ importFilePath = "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Dat
 exportFilePath = "/Users/rkeable/Personal/Projects/AFL-Fantasy-DataModelling/Data/Export/"
 playerExportDir = "Players/"
 teamExportDir = "Teams"
-KeyDefLabel = "KeyDefs"
-RucksLabel = "Rucks"
-MidsLabel = "Mids"
-WingsLabel = "Wings"
-DefsLabel = "Defs"
+KeyDefLabel = "KeyDef"
+RucksLabel = "Ruck"
+MidsLabel = "Mid"
+WingsLabel = "Trans"
+DefsLabel = "Def"
 playersExportDir = "Players"
 playerStatsFlieName = "playerStats_22_to_24_AFL.csv"
 fixtureFlieName = "Fixture_data_2025.csv"
 
 teamFilter = "team.name"
 opponentFilter = "opponent"
+playerFilter = "playerName"
 
 def CleanPreviousExports():
     # Get all files in the folder and its subdirectories
@@ -82,7 +83,9 @@ def GenerateTeamFixture(aflFixture : pd.DataFrame, teamName : str) -> pd.DataFra
 
     return teamFixture
 
-
+# We are not using player or team stats for scalars
+# we get our profile's means and multiple it by our opoponent's scalars
+# then 
 def PredictScorePerOpponent(profile : pd.DataFrame, opponentProfile : pd.DataFrame) : 
     
     profileName = profile.index.item()  # get the team name and remove parentheses
@@ -96,32 +99,28 @@ def PredictScorePerOpponent(profile : pd.DataFrame, opponentProfile : pd.DataFra
     DPrint(f"comparing {profileName} against {opponentName}")
 
     #compare means
-    # Identify columns that contain 'Mean'
-    # no we want to scale our player's mean based off the teams differentials
-    mean_cols = [col for col in profile.columns if "Mean" in col]
-    diff_cols = [col for col in profile.columns if not "Mean" in col and not "Trend" in col]
+    # Identify columns that contain 'Mean', "Scalr" or "FP"
+    meanCols = [col for col in profile.columns if "Mean" in col]
+    scalarCols = [col for col in profile.columns if "Scalar" in col]
+    fpCols = [col for col in profile.columns if "FP" in col]
 
     # Extract relevant rows
-    statMeans = profile.loc[profileName, mean_cols]
-    
+    statMeans = profile.loc[profileName, meanCols]
+    scalarCols = profile.loc[opponentName, scalarCols]
+    calcFP = profile.loc[profileName, fpCols].to_frame()
+
     # Strip " W Mean" from playerStatMeans index
     statMeans.index = statMeans.index.str.replace(" W Mean", "")
+    calcFP.index = calcFP.index.str.replace(" FP", "")
+    scalarCols.index = scalarCols.index.str.replace(" Scalar", "")
 
     # convert scalar back to a percentage multiplier
-    opponentStatScalars = InvertAverageDifferentialBasis(profile.loc[opponentName, diff_cols])
+    opponentStatScalars = InvertAverageDifferentialBasis(scalarCols)
 
     # Apply the adjustment formula
     adjustedStatMeans = statMeans * opponentStatScalars
 
-    # Compute expected fantasy points per stat
-    averageFantasyPoints = {
-        stat: statMeans[stat] * PureFantasyPointWeightsLUT[stat]
-        for stat in PureFantasyPointWeightsLUT.keys() if stat in adjustedStatMeans
-    }
-    
-    # add our current fantasy mean to our new table 
-    averageFantasyPoints["dreamTeamPoints"] = profile["dreamTeamPoints W Mean"].iloc[0]
-    
+
     # predict fantasy scores against opponent 
     predictedFantasyPoints = {
         stat: adjustedStatMeans[stat] * PureFantasyPointWeightsLUT[stat]
@@ -130,35 +129,25 @@ def PredictScorePerOpponent(profile : pd.DataFrame, opponentProfile : pd.DataFra
 
     predictedFantasyPointsAvg = sum(predictedFantasyPoints.values())
     predictedFantasyPoints["dreamTeamPoints"] = predictedFantasyPointsAvg
-        
-    # Convert expectedFantasyPoints dictionary to a DataFrame
-    averageFantasyPointsDF = pd.DataFrame(averageFantasyPoints, index=[f"{profileName} AVG"])
-    predictedFantasyPointsFantasyPointsDF = pd.DataFrame(predictedFantasyPoints, index=[f"{profileName} PREDICTED"])
-    predictedFantasyPointsFantasyPointsDF = pd.concat([predictedFantasyPointsFantasyPointsDF, averageFantasyPointsDF])
+    
+    averageFantasyPointsDF = calcFP.T    
+
+    predictedFantasyPointsDF = pd.DataFrame(predictedFantasyPoints, index=[f"{profileName} PREDICTED"])
+    combinedDF = pd.concat([averageFantasyPointsDF, predictedFantasyPointsDF])
 
     # Compute the Average Differential Basis for each column
-    diffs = predictedFantasyPointsFantasyPointsDF.apply(lambda col: AverageDifferentialBasis(col.iloc[0], col.iloc[1]).round(2))
+    diffs = combinedDF.apply(lambda col: AverageDifferentialBasis(col.iloc[0], col.iloc[1]).round(2))
 
     # Convert it into a DataFrame with a proper index name
     diffsTable = pd.DataFrame(diffs).T
     diffsTable.index = [opponentName]
 
-    # Ensure "dreamTeamPoints" is the first column
-    columns_order = ["dreamTeamPoints"] + [col for col in diffsTable.columns if col != "dreamTeamPoints"]
-    # Reorder columns
-    diffsTable = diffsTable[columns_order]  
-
-    # add the mean back in
-    diffsTable["dreamTeamPoints Mean"] = profile["dreamTeamPoints W Mean"].values[0]
-
-    # Ensure "dreamTeamPoints" is the first column
-    columns_order = ["dreamTeamPoints Mean"] + [col for col in diffsTable.columns if col != "dreamTeamPoints Mean"]
-    # Reorder columns
-    diffsTable = diffsTable[columns_order]  
+    # add the predicted sum
+    diffsTable["dreamTeamPoints Predicted Sum"] = predictedFantasyPointsAvg.round(2)
 
 
     # Concatenate with the existing DataFrame
-    predictedFantasyPointsFantasyPointsDF = pd.concat([predictedFantasyPointsFantasyPointsDF, diffsTable])
+    combinedDF = pd.concat([combinedDF, diffsTable])
     
     return diffsTable
 
@@ -169,16 +158,19 @@ def GetAverageAgainstOpponentAsScalar(profile : pd.DataFrame, opponent : str, al
     profileName = profile.index.item()  # get the team name and remove parentheses
     years = sorted(allStats["Year"].unique())
     
+    posFilterDiv = len(positionFilter)
+    if isPlayer is True : 
+        posFilterDiv = 0
+    
     fanstasyPointsPerRound = SumTeamStatByRoundAgainstOpp(allStats, profileName, opponent, positionFilter, isPlayer)
-    DPrint(fanstasyPointsPerRound)
-    fantasyStatProfile = GenerateStatMeansAndDiff(years, fanstasyPointsPerRound, label="dreamTeamPoints", weightedAvgBase=2)
+    fantasyStatProfile = GenerateStatMeansAndDiff(years, fanstasyPointsPerRound, posFilterDiv, label="dreamTeamPoints", weightedAvgBase=2)
     
     if fantasyStatProfile is None:
         return 0,0
     
     # clean out unused columns
     fantasyStatProfile.drop(index=["League Average"], inplace=True)
-    fantasyStatProfile.drop(["dreamTeamPoints"], axis=1, inplace=True)
+    fantasyStatProfile.drop(["dreamTeamPoints Scalar"], axis=1, inplace=True)
     
     # set opponent name as index label
     fantasyStatProfile["opponent"] = opponent
@@ -215,27 +207,20 @@ def CompareProfileAgainstOpponents(fixture : pd.DataFrame, profileToCompare : pd
     WriteTablesToCSV(predictedPlayerScoresDF, exportDirs)
 
 
-def PredictScoresPerRoundPerPlayer(playerNames : list[str], aflFixture : pd.DataFrame, teamStatsAgainst : pd.DataFrame, statsToProfile : list[str], allStats : pd.DataFrame, positionFilter: list[str], exportDirs : list[str]) : 
+def PredictScoresPerRoundPerPlayer(playerNames : list[str], aflFixture : pd.DataFrame, processedPlayerStats : pd.DataFrame, teamStatsAgainst : pd.DataFrame, allStats : pd.DataFrame, positionFilter: list[str], exportDirs : list[str]) : 
     
     for playerName in playerNames :
         DPrint(f"Generating predicted scores scales for {playerName}")
-        DPrint(teamStatsAgainst, "teamStatsAgainst")
 
-        # Get player stats using statsToCompare League Average Means 
-        # divide by position filter count?
-        leagueAverages = teamStatsAgainst.loc[["League Average"]]
-        leagueAverages = leagueAverages / len(positionFilter)
-        playerStats = PlayerStatDifferentials(processedStats, leagueAverages, playerName, statsToProfile)
-    
+        playerStats = processedPlayerStats[processedPlayerStats.index == playerName] 
 
         if playerStats is None :
-            return
+            DPrint(f"Player, {playerName} is not in the list of Player Stats")
+            continue
 
-        playerTeam = playerStats["team.name"].iloc[0]
+        playerRow = allStats[allStats["playerName"] == playerName].iloc[0]
+        playerTeam = playerRow["team.name"]
 
-        # drop TeamName and League Average to make comparisons
-        playerStats.drop("team.name", axis=1, inplace=True)
-        playerStats.drop(index=["League Average"], inplace=True)
 
         # Generate the fixture where playerTeam is playing as a DF
         fixture = GenerateTeamFixture(aflFixture, playerTeam)
@@ -268,22 +253,24 @@ def GenerateProfilesPerRole(label : str, processedStats : pd.DataFrame, fixture 
 
     statsToProfile = RelevantTeamStats + additionalStatsToProfile
     
-    statsFor = TeamStatDifferentials(label+"StatsFor", processedStats[:], statsToProfile, teamFilter, positionsToProfile)    
-    statsAgainst = TeamStatDifferentials(label+"StatsAgainst", processedStats[:], statsToProfile, opponentFilter, positionsToProfile)
-    
+    statsFor = StatDifferentials(label+"StatsFor", processedStats[:], statsToProfile, teamFilter, positionsToProfile, True)    
+    statsAgainst = StatDifferentials(label+"StatsAgainst", processedStats[:], statsToProfile, opponentFilter, positionsToProfile, True)
+    playerStats = StatDifferentials(label+"PlayerStats", processedStats[:], statsToProfile, playerFilter, positionsToProfile)
+
     WriteTablesToCSV(statsFor, [label])
     WriteTablesToCSV(statsAgainst, [label])
+    WriteTablesToCSV(playerStats, [label])
     
     PredictScoresPerRoundPerTeam(fixture, statsFor[:], statsAgainst[:], processedStats[:], positionsToProfile, [label])
     
     if playersToProfile is not None:
-        PredictScoresPerRoundPerPlayer(playersToProfile, fixture, statsAgainst[:], statsToProfile, processedStats[:], positionsToProfile, [label, playerExportDir])
+        PredictScoresPerRoundPerPlayer(playersToProfile, fixture, playerStats[:], statsAgainst[:], processedStats[:], positionsToProfile, [label, playerExportDir])
 
 
 def GenerateTeamProfiles(processedStats) -> pd.DataFrame:
 
-    generalTeamStatsFor = TeamStatDifferentials("GeneralTeamStatsFor", processedStats[:], RelevantTeamStats, teamFilter)
-    generalTeamStatsAgainst = TeamStatDifferentials("GeneralTeamStatsAgainst", processedStats[:], RelevantTeamStats, opponentFilter)
+    generalTeamStatsFor = StatDifferentials("GeneralTeamStatsFor", processedStats[:], RelevantTeamStats, teamFilter)
+    generalTeamStatsAgainst = StatDifferentials("GeneralTeamStatsAgainst", processedStats[:], RelevantTeamStats, opponentFilter)
     
     WriteTablesToCSV(generalTeamStatsFor)
     WriteTablesToCSV(generalTeamStatsAgainst)
@@ -293,10 +280,12 @@ CleanPreviousExports()
 processedStats = ProcessPlayerStats()
 fixture = Get2025Fixture()
 
+processedStats.title = "processedStats"
+WriteTablesToCSV(processedStats)
+
 GenerateTeamProfiles(processedStats)
 
 GenerateProfilesPerRole(MidsLabel, processedStats, fixture, RelevantMidfieldStats, MidsPositionTitles, MidsToProfile)
-
 GenerateProfilesPerRole(DefsLabel, processedStats, fixture, RelevantHalfbackStats, DefsPositionTitles, DefsToProfile)
 GenerateProfilesPerRole(RucksLabel, processedStats, fixture, RelevantRuckStats, RuckPositionTitle, RucksToProfile)
 GenerateProfilesPerRole(WingsLabel, processedStats, fixture, RelevantTransitionStats, TransitionPositionTitles)
